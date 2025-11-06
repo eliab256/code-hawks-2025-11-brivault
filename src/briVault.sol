@@ -51,6 +51,7 @@ contract BriVault is ERC4626, Ownable {
     uint256 public numberOfParticipants;
 
     // Array of teams 
+    // @audit-issue too many teams?
     string[48] public teams;
     address[] public usersAddress;
 
