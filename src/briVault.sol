@@ -33,6 +33,7 @@ contract BriVault is ERC4626, Ownable {
 
     string public winner;
 
+    // @audit-issue check cosa fa effettivamente e le tempistiche
     uint256 public finalizedVaultAsset;
 
     uint256 public totalWinnerShares;
@@ -147,7 +148,7 @@ contract BriVault is ERC4626, Ownable {
         if (block.timestamp <= eventStartDate) {
             revert eventNotStarted();
         }
-
+        // @audit-issue può cambiare nel tempo? posso chiamare burn a se stante e modificare la pool?
         return finalizedVaultAsset = IERC20(asset()).balanceOf(address(this));
     }
 

