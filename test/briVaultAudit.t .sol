@@ -180,8 +180,15 @@ contract BriVaultAuditTest is Test {
         briVault.joinEvent(0); // joining with countryId 0
         vm.stopPrank();
 
+        //User1 with shares can't join event
+        vm.startPrank(user1);
+        vm.expectRevert(abi.encodeWithSelector(BriVault.noDeposit.selector));
+        briVault.joinEvent(0); // joining with countryId 0
+        vm.stopPrank();
+
     }
 
+//---------------SENT-----------------------
     function testOwnerCanPartecipateAndSetHisTeamAsWinner() public {
         //owner can both partecipate and choose the winner
         uint256 depositAmount = 5 ether;
