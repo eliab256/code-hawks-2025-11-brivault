@@ -270,10 +270,6 @@ contract BriVault is ERC4626, Ownable {
         emit joinedEvent(msg.sender, countryId);
     }
 
-
-    /**
-        @dev cancel participation
-     */
     function cancelParticipation () public  {
         if (block.timestamp >= eventStartDate){
            revert eventStarted();

